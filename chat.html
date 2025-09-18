@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chat with Clone</title>
+</head>
+
+<body>
+  <h2>RAG Clone Chat</h2>
+  <div id="chat"></div>
+  <input id="msg" type="text" placeholder="Type a message..." />
+  <button onclick="sendMsg()">Send</button>
+
+  <script>
+    const socket = new WebSocket("ws://localhost:8000/ws/chat");
+    const chatDiv = document.getElementById("chat");
+
+    socket.onopen = () => {
+      chatDiv.innerHTML += "<p><b>System:</b> Connected ✅</p>";
+    };
+
+    socket.onmessage = (event) => {
+      chatDiv.innerHTML += `<p><b>Clone:</b> ${event.data}</p>`;
+    };
+
+    function sendMsg() {
+      const msg = document.getElementById("msg").value;
+      chatDiv.innerHTML += `<p><b>You:</b> ${msg}</p>`;
+      socket.send(msg);
+      document.getElementById("msg").value = "";
+    }
+  </script>
+</body>
+
+</html>
