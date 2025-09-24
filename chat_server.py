@@ -17,7 +17,7 @@ QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 # Connect to Qdrant Cloud
 qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-COLLECTION = "persona_clone"
+COLLECTION = "zaid_clone"
 
 app = FastAPI()
 
