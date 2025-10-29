@@ -81,7 +81,7 @@ A production-ready Flask-based RAG (Retrieval-Augmented Generation) web applicat
 ### Installation
 
 1. **Clone the repository**
-git clone https://github.com/yourusername/flask-rag-chatbot.git
+git clone https://github.com/SuperZaid98k/Twinity.git
 cd flask-rag-chatbot
 
 2. **Create virtual environment**
