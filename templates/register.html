@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+    <h2>Register</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>Full Name *</label>
+            <input type="text" name="full_name" required placeholder="Enter your full name">
+        </div>
+        <div class="form-group">
+            <label>Username *</label>
+            <input type="text" name="username" required placeholder="Choose a username">
+        </div>
+        <div class="form-group">
+            <label>Password *</label>
+            <div class="password-input-wrapper">
+                <input type="password" id="registerPassword" name="password" required 
+                       minlength="6" placeholder="Min 6 characters">
+                <button type="button" class="toggle-password" onclick="togglePassword('registerPassword', this)">
+                    👁️
+                </button>
+            </div>
+            <small style="display: block; margin-top: 0.5rem; color: #666;">
+                Minimum 6 characters required
+            </small>
+        </div>
+        <button type="submit" class="btn">Register</button>
+    </form>
+    <p>Already have an account? <a href="{{ url_for('login') }}">Login</a></p>
+</div>
+
+<script>
+function togglePassword(inputId, button) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        button.textContent = '🙈';
+        button.setAttribute('aria-label', 'Hide password');
+    } else {
+        input.type = 'password';
+        button.textContent = '👁️';
+        button.setAttribute('aria-label', 'Show password');
+    }
+}
+</script>
+
+<style>
+.password-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.password-input-wrapper input {
+    flex: 1;
+    padding-right: 3rem;
+}
+
+.toggle-password {
+    position: absolute;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.25rem;
+    padding: 0.5rem;
+    line-height: 1;
+    transition: transform 0.2s;
+    user-select: none;
+}
+
+.toggle-password:hover {
+    transform: scale(1.1);
+}
+
+.toggle-password:active {
+    transform: scale(0.95);
+}
+
+.toggle-password:focus {
+    outline: 2px solid #3498db;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+</style>
+{% endblock %}

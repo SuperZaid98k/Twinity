@@ -1,0 +1,693 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Edit: {{ clone.name }}</h1>
+<p>{{ clone.description }}</p>
+<p class="meta">Current knowledge: {{ clone.chunk_count }} chunks</p>
+
+<div class="action-buttons">
+    <a href="{{ url_for('manage_data', clone_id=clone_id) }}" class="btn btn-manage">
+        📊 Manage Data
+    </a>
+    <a href="{{ url_for('chat_page', clone_id=clone_id) }}" class="btn">Test Chat</a>
+    <a href="{{ url_for('dashboard') }}" class="btn" style="background: #95a5a6;">Back to Dashboard</a>
+</div>
+
+<div class="upload-section">
+    <h2>Add Training Data</h2>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <button class="tab-button active" onclick="showTab('text')">Text Input</button>
+        <button class="tab-button" onclick="showTab('file')">Upload Documents</button>
+        <button class="tab-button" onclick="showTab('document')">📎 Attach Document</button>
+    </div>
+
+    <!-- Text Input Form -->
+    <form id="textForm" class="tab-content active">
+        <div class="form-group">
+            <label>Enter Training Text</label>
+            <textarea id="textInput" name="text_content" rows="10"
+                placeholder="Paste or type your training data here..." required></textarea>
+        </div>
+        <button type="submit" class="btn">Preview Chunks</button>
+    </form>
+
+
+
+
+
+    <!-- File Upload Form -->
+    <form id="uploadForm" enctype="multipart/form-data" class="tab-content" style="display: none;">
+        <div class="form-group">
+            <label>Upload Document or Image</label>
+            <input type="file" id="fileInput"
+                accept=".pdf,.docx,.doc,.pptx,.ppt,.jpg,.jpeg,.png,.bmp,.tiff,.gif,.txt,.csv,.xlsx,.xls" required>
+            <small style="display: block; margin-top: 0.5rem; color: #666;">
+                📄 <strong>Documents:</strong> PDF, Word (DOCX/DOC), PowerPoint (PPTX/PPT)<br>
+                🖼️ <strong>Images:</strong> JPG, PNG, BMP, TIFF, GIF<br>
+                📊 <strong>Data:</strong> Excel (XLSX/XLS), CSV, TXT<br>
+                <span style="color: #27ae60; font-weight: 500;">✨ Powered by AI - Intelligent parsing with
+                    LlamaParse</span>
+            </small>
+        </div>
+        <button type="submit" class="btn">Preview Chunks</button>
+    </form>
+
+    <!-- Document Attachment Form -->
+    <form id="documentForm" enctype="multipart/form-data" class="tab-content" style="display: none;">
+        <div class="document-upload-info">
+            <p><strong>📎 Attach Documents for Download</strong></p>
+            <p style="font-size: 0.9rem; color: #666; line-height: 1.6;">
+                Upload a document (PDF, Word, Excel, Image, etc.) along with a description.
+                When users ask about the description, they'll be able to download the file directly from chat.
+            </p>
+            <p style="font-size: 0.85rem; color: #e74c3c; margin-top: 0.5rem;">
+                <strong>Example:</strong> Upload "exam_form.pdf" with description "This is the exam registration form"
+                → Users asking about exam registration will get a download link.
+            </p>
+        </div>
+
+        <div class="form-group">
+            <label>Select Document File</label>
+            <input type="file" id="documentInput" name="document" required>
+            <small style="display: block; margin-top: 0.5rem; color: #666;">
+                Any file type supported (Max 16MB)
+            </small>
+        </div>
+
+        <div class="form-group">
+            <label>Description (What users should search for)</label>
+            <textarea id="documentDescription" name="description" rows="4"
+                placeholder="E.g., 'This is the exam registration form' or 'Company brochure with pricing details' or 'Product manual for Model X'"
+                required></textarea>
+            <small style="display: block; margin-top: 0.5rem; color: #666;">
+                This description will be searchable. Make it clear and descriptive so users can find it easily.
+            </small>
+        </div>
+
+        <button type="submit" class="btn" style="background: #9b59b6;">
+            📎 Upload Document
+        </button>
+    </form>
+
+    <div id="uploadStatus"></div>
+</div>
+<h3>WhatsApp Data Upload Integration</h3>
+<form id="whatsappForm" method="POST" action="{{ url_for('enable_whatsapp', clone_id=clone_id) }}">
+    <label style="font-size: 1.13em;">
+        <input type="checkbox" id="enableWhatsapp" name="enable_whatsapp" {% if clone.phone_number %}checked{% endif %}>
+        Enable WhatsApp uploads for this chatbot
+    </label>
+    <div id="whatsappConfig" class="whatsapp-config{% if not clone.phone_number %} hidden{% endif %}"
+        style="margin-top: 1rem;">
+        <label>Link WhatsApp phone number:</label>
+        <input type="text" name="phone_number" value="{{ clone.phone_number or '' }}" placeholder="e.g., +919876543210">
+        <button type="submit" class="btn" style="margin-left:1rem;">Save Phone Number</button>
+        <div style="margin:1rem 0; background:#f0f8ff; border-radius:8px; padding:1rem;">
+            <strong>To set up WhatsApp uploads:</strong>
+            <ol>
+                <li>Enter and save your WhatsApp number above.</li>
+                <li>Message <b>+1 415 523 8886</b> from WhatsApp.</li>
+                <li>Send the code: <b>join clearly-this</b> to join the Twilio sandbox.</li>
+                <li>Or just scan:<br>
+                    <img src="{{ url_for('static', filename='Screenshot 2025-10-28 234352.jpg') }}"
+                        style="max-width:160px;">
+                </li>
+                <li>After joining, send text, images, or docs to that number and it will update your chatbot’s
+                    knowledge automatically.</li>
+            </ol>
+        </div>
+    </div>
+</form>
+<script>
+    document.getElementById("enableWhatsapp").addEventListener("change", function () {
+        document.getElementById("whatsappConfig").style.display = this.checked ? "block" : "none";
+    });
+</script>
+<!-- Chunk Preview Modal -->
+<div id="chunkPreviewModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>📦 Select Chunks to Upload</h2>
+            <button class="close-btn" onclick="closePreview()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="selection-controls">
+                <button onclick="selectAll()" class="btn btn-small">Select All</button>
+                <button onclick="deselectAll()" class="btn btn-small">Deselect All</button>
+                <span id="selectionCount" style="margin-left: 1rem; font-weight: 500;"></span>
+            </div>
+            <div id="chunksContainer" class="chunks-list"></div>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closePreview()" class="btn" style="background: #95a5a6;">Cancel</button>
+            <button onclick="uploadSelectedChunks()" class="btn" style="background: #27ae60;">
+                Upload Selected Chunks
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let previewedChunks = [];
+
+    function showTab(tabName) {
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.style.display = 'none';
+        });
+
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        if (tabName === 'text') {
+            document.getElementById('textForm').style.display = 'block';
+            document.querySelectorAll('.tab-button')[0].classList.add('active');
+        } else if (tabName === 'file') {
+            document.getElementById('uploadForm').style.display = 'block';
+            document.querySelectorAll('.tab-button')[1].classList.add('active');
+        } else if (tabName === 'document') {
+            document.getElementById('documentForm').style.display = 'block';
+            document.querySelectorAll('.tab-button')[2].classList.add('active');
+        }
+    }
+
+    // Handle text form submission
+    document.getElementById('textForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData();
+        const textInput = document.getElementById('textInput');
+        formData.append('text_content', textInput.value);
+
+        await previewChunks(formData);
+        textInput.value = '';
+    });
+
+    // Handle file upload form submission
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData();
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+
+        if (file.size > 16 * 1024 * 1024) {
+            document.getElementById('uploadStatus').innerHTML =
+                '<p class="error">✗ File too large. Maximum size: 16MB</p>';
+            return;
+        }
+
+        formData.append('file', file);
+
+        await previewChunks(formData, file.name);
+        fileInput.value = '';
+    });
+
+    // Handle document form submission
+    document.getElementById('documentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const formData = new FormData();
+        const fileInput = document.getElementById('documentInput');
+        const descriptionInput = document.getElementById('documentDescription');
+
+        const file = fileInput.files[0];
+
+        if (file.size > 16 * 1024 * 1024) {
+            document.getElementById('uploadStatus').innerHTML =
+                '<p class="error">✗ File too large. Maximum size: 16MB</p>';
+            return;
+        }
+
+        formData.append('document', file);
+        formData.append('description', descriptionInput.value);
+
+        const statusDiv = document.getElementById('uploadStatus');
+        statusDiv.innerHTML = '<p class="processing">📎 Uploading document...</p>';
+
+        try {
+            const response = await fetch('{{ url_for("upload_document", clone_id=clone_id) }}', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                statusDiv.innerHTML = `
+                <p class="success">
+                    ✓ Document uploaded successfully!<br>
+                    📎 File: <strong>${data.filename}</strong><br>
+                    📊 Total knowledge: <strong>${data.total_chunks}</strong> items
+                </p>
+            `;
+
+                // Clear form
+                fileInput.value = '';
+                descriptionInput.value = '';
+
+                // Update chunk count
+                document.querySelector('.meta').textContent = `Current knowledge: ${data.total_chunks} chunks`;
+            } else {
+                statusDiv.innerHTML = `<p class="error">✗ Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<p class="error">✗ Upload failed: ${error.message}</p>`;
+        }
+    });
+
+    async function previewChunks(formData, fileName = null) {
+        const statusDiv = document.getElementById('uploadStatus');
+
+        let processingMsg = '<p class="processing">🤖 AI is processing';
+        if (fileName) {
+            const ext = fileName.split('.').pop().toUpperCase();
+            processingMsg += ` your ${ext} file`;
+        }
+        processingMsg += '...</p>';
+        statusDiv.innerHTML = processingMsg;
+
+        try {
+            const response = await fetch('{{ url_for("preview_chunks", clone_id=clone_id) }}', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                previewedChunks = data.chunks;
+                displayChunkPreview(data.chunks);
+                statusDiv.innerHTML = '';
+            } else {
+                statusDiv.innerHTML = `<p class="error">✗ Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<p class="error">✗ Processing failed: ${error.message}</p>`;
+        }
+    }
+
+    function displayChunkPreview(chunks) {
+        const modal = document.getElementById('chunkPreviewModal');
+        const container = document.getElementById('chunksContainer');
+
+        container.innerHTML = '';
+
+        chunks.forEach((chunk, index) => {
+            const chunkDiv = document.createElement('div');
+            chunkDiv.className = 'chunk-item';
+            chunkDiv.innerHTML = `
+            <div class="chunk-header">
+                <label class="checkbox-label">
+                    <input type="checkbox" class="chunk-checkbox" data-index="${index}" checked>
+                    <span class="chunk-title">
+                        Chunk ${index + 1}
+                        ${chunk.section ? `<span class="chunk-badge">${chunk.section}</span>` : ''}
+                        ${chunk.type ? `<span class="chunk-type">${chunk.type}</span>` : ''}
+                    </span>
+                </label>
+            </div>
+            <div class="chunk-preview">${escapeHtml(chunk.preview)}</div>
+            <button class="view-full-btn" onclick="toggleFullText(${index})">View Full Text</button>
+            <div class="chunk-full" id="full-${index}" style="display: none;">
+                ${escapeHtml(chunk.text)}
+            </div>
+        `;
+            container.appendChild(chunkDiv);
+        });
+
+        updateSelectionCount();
+        modal.style.display = 'flex';
+
+        // Add event listeners to checkboxes
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelectionCount);
+        });
+    }
+
+    function toggleFullText(index) {
+        const fullDiv = document.getElementById(`full-${index}`);
+        const btn = event.target;
+
+        if (fullDiv.style.display === 'none') {
+            fullDiv.style.display = 'block';
+            btn.textContent = 'Hide Full Text';
+        } else {
+            fullDiv.style.display = 'none';
+            btn.textContent = 'View Full Text';
+        }
+    }
+
+    function selectAll() {
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.checked = true;
+        });
+        updateSelectionCount();
+    }
+
+    function deselectAll() {
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        updateSelectionCount();
+    }
+
+    function updateSelectionCount() {
+        const total = document.querySelectorAll('.chunk-checkbox').length;
+        const selected = document.querySelectorAll('.chunk-checkbox:checked').length;
+        document.getElementById('selectionCount').textContent =
+            `${selected} of ${total} chunks selected`;
+    }
+
+    function closePreview() {
+        document.getElementById('chunkPreviewModal').style.display = 'none';
+    }
+
+    async function uploadSelectedChunks() {
+        const selectedIndices = [];
+        document.querySelectorAll('.chunk-checkbox:checked').forEach(cb => {
+            selectedIndices.push(parseInt(cb.dataset.index));
+        });
+
+        if (selectedIndices.length === 0) {
+            alert('Please select at least one chunk to upload');
+            return;
+        }
+
+        const statusDiv = document.getElementById('uploadStatus');
+        statusDiv.innerHTML = '<p class="processing">📤 Uploading selected chunks...</p>';
+        closePreview();
+
+        try {
+            const response = await fetch('{{ url_for("upload_selected_chunks", clone_id=clone_id) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ selected_indices: selectedIndices })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                statusDiv.innerHTML = `
+                <p class="success">
+                    ✓ Successfully uploaded chunks!<br>
+                    📦 Added <strong>${data.chunks_added}</strong> chunks<br>
+                    📊 Total knowledge base: <strong>${data.total_chunks}</strong> chunks
+                </p>
+            `;
+
+                document.querySelector('.meta').textContent = `Current knowledge: ${data.total_chunks} chunks`;
+            } else {
+                statusDiv.innerHTML = `<p class="error">✗ Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<p class="error">✗ Upload failed: ${error.message}</p>`;
+        }
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+
+<style>
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .btn-manage {
+        background: #9b59b6 !important;
+    }
+
+    .btn-manage:hover {
+        background: #8e44ad !important;
+    }
+
+    /* Document Upload Info Box */
+    .document-upload-info {
+        background: linear-gradient(135deg, #f0f8ff 0%, #e8f4f8 100%);
+        padding: 1.25rem;
+        border-left: 4px solid #9b59b6;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .document-upload-info p {
+        margin: 0.5rem 0;
+    }
+
+    .document-upload-info strong {
+        color: #9b59b6;
+    }
+
+    /* Modal Styles */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-content {
+        background-color: white;
+        width: 90%;
+        max-width: 900px;
+        max-height: 90vh;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        color: #666;
+        line-height: 1;
+    }
+
+    .close-btn:hover {
+        color: #e74c3c;
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #ddd;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .selection-controls {
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .chunks-list {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .chunk-item {
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #f8f9fa;
+        transition: all 0.3s;
+    }
+
+    .chunk-item:has(.chunk-checkbox:checked) {
+        border-color: #3498db;
+        background: #e8f4f8;
+    }
+
+    .chunk-header {
+        margin-bottom: 0.75rem;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .chunk-checkbox {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+    }
+
+    .chunk-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .chunk-badge {
+        background: #3498db;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .chunk-type {
+        background: #95a5a6;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+    }
+
+    .chunk-preview {
+        color: #555;
+        line-height: 1.6;
+        padding: 0.75rem;
+        background: white;
+        border-radius: 4px;
+        margin-bottom: 0.5rem;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+
+    .chunk-full {
+        margin-top: 0.5rem;
+        padding: 1rem;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.85rem;
+        line-height: 1.6;
+        white-space: pre-wrap;
+    }
+
+    .view-full-btn {
+        background: none;
+        border: none;
+        color: #3498db;
+        cursor: pointer;
+        text-decoration: underline;
+        font-size: 0.9rem;
+    }
+
+    .view-full-btn:hover {
+        color: #2980b9;
+    }
+
+    #fileInput,
+    #documentInput {
+        padding: 0.75rem;
+        border: 2px dashed #3498db;
+        border-radius: 8px;
+        background: #f8f9fa;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    #fileInput:hover,
+    #documentInput:hover {
+        border-color: #2980b9;
+        background: #e8f4f8;
+    }
+
+    #fileInput:focus,
+    #documentInput:focus {
+        outline: none;
+        border-color: #27ae60;
+        box-shadow: 0 0 0 3px rgba(39, 174, 96, 0.1);
+    }
+
+    .processing {
+        color: #f39c12;
+        font-weight: 500;
+        padding: 1rem;
+        background: #fff9e6;
+        border-left: 4px solid #f39c12;
+        border-radius: 4px;
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.7;
+        }
+    }
+
+    .success {
+        color: #27ae60;
+        font-weight: 500;
+        padding: 1rem;
+        background: #e8f8f5;
+        border-left: 4px solid #27ae60;
+        border-radius: 4px;
+        line-height: 1.8;
+    }
+
+    .error {
+        color: #e74c3c;
+        font-weight: 500;
+        padding: 1rem;
+        background: #fdedec;
+        border-left: 4px solid #e74c3c;
+        border-radius: 4px;
+    }
+
+    .upload-section small {
+        line-height: 1.8;
+    }
+
+    .hidden {
+        display: none;
+    }
+</style>
+{% endblock %}

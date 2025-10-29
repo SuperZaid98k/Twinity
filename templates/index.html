@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h1>Welcome to RAG Clones</h1>
+    <p>Create AI chatbots trained on your own data</p>
+</div>
+
+<div class="clones-grid">
+    <h2>Public Chatbots</h2>
+    {% if clones %}
+    {% for clone_id, clone in clones.items() %}
+    <div class="clone-card">
+        <h3>{{ clone.name }}</h3>
+        <p>{{ clone.description }}</p>
+        <p class="meta">
+            By {{ clone.get('owner_full_name', clone.owner) }} •
+            {{ clone.chunk_count }} knowledge chunks
+        </p>
+        {% if clone.phone_number %}
+        <p class="contact-info">
+            📞 {{ clone.phone_number }}
+        </p>
+        {% endif %}
+        <a href="{{ url_for('chat_page', clone_id=clone_id) }}" class="btn">Chat Now</a>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p>No public chatbots available yet. <a href="{{ url_for('register') }}">Create one!</a></p>
+    {% endif %}
+</div>
+{% endblock %}

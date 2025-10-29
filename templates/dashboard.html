@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>My Chatbots</h1>
+<a href="{{ url_for('create_clone') }}" class="btn">Create New Clone</a>
+
+<div class="clones-grid">
+    {% if clones %}
+    {% for clone_id, clone in clones.items() %}
+    <div class="clone-card">
+        <h3>{{ clone.name }}</h3>
+        <p>{{ clone.description }}</p>
+        <p class="meta">
+            {{ clone.chunk_count }} chunks •
+            {% if clone.is_public %}Public{% else %}Private{% endif %}
+        </p>
+        {% if clone.phone_number %}
+        <p class="contact-info">📞 {{ clone.phone_number }}</p>
+        {% endif %}
+        <div class="button-group">
+            <a href="{{ url_for('edit_clone', clone_id=clone_id) }}" class="btn btn-small">Edit</a>
+            <a href="{{ url_for('chat_page', clone_id=clone_id) }}" class="btn btn-small">Chat</a>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p>You haven't created any clones yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,518 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="chat-header">
+        <h1>💬 Chat with {{ clone.name }}</h1>
+        <p>{{ clone.description }}</p>
+        <div class="clone-details">
+            <span class="detail-item">👤 {{ clone.get('owner_full_name', clone.owner) }}</span>
+            {% if clone.phone_number %}
+            <span class="detail-item">📞 {{ clone.phone_number }}</span>
+            {% endif %}
+        </div>
+        <div style="margin-top: 1rem;">
+            <button onclick="clearHistory()" class="btn-clear-history">
+                🗑️ Clear Chat History
+            </button>
+        </div>
+    </div>
+
+    <!-- NEW: Documents Panel -->
+    <div id="documentsPanel" class="documents-panel" style="display: none;">
+        <div class="documents-header">
+            <h3>📎 Related Documents</h3>
+            <button onclick="closeDocuments()" class="close-docs-btn">✕</button>
+        </div>
+        <div id="documentsList" class="documents-list"></div>
+    </div>
+
+    <div id="chatMessages" class="chat-messages"></div>
+
+    <form id="chatForm" class="chat-input">
+        <input type="text" id="messageInput" placeholder="Ask a question..." required>
+        <button type="submit" class="btn">Send</button>
+    </form>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    const chatForm = document.getElementById('chatForm');
+    const messageInput = document.getElementById('messageInput');
+    const cloneId = '{{ clone_id }}';
+    const documentsPanel = document.getElementById('documentsPanel');
+    const documentsList = document.getElementById('documentsList');
+
+    chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        addMessage(message, 'user');
+        messageInput.value = '';
+
+        const typingIndicator = addTypingIndicator();
+
+        try {
+            const response = await fetch('{{ url_for("chat_api", clone_id=clone_id) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ message })
+            });
+
+            const data = await response.json();
+
+            typingIndicator.remove();
+
+            if (data.response) {
+                addMessage(data.response, 'bot');
+
+                // Display documents in separate panel if any
+                if (data.documents && data.documents.length > 0) {
+                    displayDocuments(data.documents);
+                }
+            } else {
+                addMessage('Error: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            typingIndicator.remove();
+            addMessage('Error: Failed to get response', 'error');
+        }
+    });
+
+    function displayDocuments(documents) {
+        documentsList.innerHTML = '';
+
+        documents.forEach(doc => {
+            const docCard = document.createElement('div');
+            docCard.className = 'document-card';
+
+            const size_mb = (doc.size / (1024 * 1024)).toFixed(2);
+            const downloadUrl = `/download_document/${cloneId}/${doc.unique_filename}`;
+
+            docCard.innerHTML = `
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+                <div class="doc-name">${doc.filename}</div>
+                <div class="doc-description">${doc.description.substring(0, 100)}...</div>
+                <div class="doc-size">${size_mb} MB</div>
+            </div>
+            <a href="${downloadUrl}" class="doc-download-btn" download target="_blank">
+                ⬇️ Download
+            </a>
+        `;
+
+            documentsList.appendChild(docCard);
+        });
+
+        documentsPanel.style.display = 'block';
+
+        // Auto-scroll to show documents
+        documentsPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function closeDocuments() {
+        documentsPanel.style.display = 'none';
+    }
+
+    function addMessage(text, type, isHTML = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message message-${type}`;
+
+        if (isHTML) {
+            messageDiv.innerHTML = formatMessage(text);
+        } else {
+            messageDiv.textContent = text;
+        }
+
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function formatMessage(text) {
+        let formatted = text.replace(/\n/g, '<br>');
+        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+        return formatted;
+    }
+
+    function addTypingIndicator() {
+        const typingDiv = document.createElement('div');
+        typingDiv.className = 'message message-bot typing-indicator';
+        typingDiv.innerHTML = `
+        <div class="typing-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    `;
+        chatMessages.appendChild(typingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return typingDiv;
+    }
+
+    async function clearHistory() {
+        if (!confirm('Clear conversation history? This cannot be undone.')) return;
+
+        try {
+            const response = await fetch(`/api/clear_chat/${cloneId}`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                chatMessages.innerHTML = '';
+                documentsPanel.style.display = 'none';
+                addMessage(`Chat history cleared. Hello! I'm {{ clone.name }}. Ask me anything!`, 'bot');
+            }
+        } catch (error) {
+            console.error('Error clearing history:', error);
+        }
+    }
+
+    // Welcome message
+    window.addEventListener('DOMContentLoaded', () => {
+        addMessage(`Hello! I'm {{ clone.name }}. Ask me anything about my knowledge base!`, 'bot');
+    });
+</script>
+
+<style>
+    .chat-container {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 12px;
+        padding: 0;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        height: calc(100vh - 150px);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .chat-header {
+        padding: 1.5rem;
+        border-bottom: 2px solid #ecf0f1;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px 12px 0 0;
+    }
+
+    .chat-header h1 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.75rem;
+    }
+
+    .chat-header p {
+        margin: 0.5rem 0;
+        opacity: 0.9;
+    }
+
+    .clone-details {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.75rem;
+    }
+
+    .detail-item {
+        font-size: 0.9rem;
+        padding: 0.4rem 0.8rem;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 20px;
+        display: inline-block;
+        backdrop-filter: blur(10px);
+    }
+
+    .btn-clear-history {
+        background: rgba(231, 76, 60, 0.2);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: all 0.3s;
+    }
+
+    .btn-clear-history:hover {
+        background: rgba(231, 76, 60, 0.4);
+        transform: translateY(-1px);
+    }
+
+    /* NEW: Documents Panel Styles */
+    .documents-panel {
+        background: #f8f9fa;
+        border-bottom: 2px solid #e0e0e0;
+        padding: 1rem;
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .documents-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .documents-header h3 {
+        margin: 0;
+        color: #333;
+        font-size: 1.1rem;
+    }
+
+    .close-docs-btn {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        color: #666;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+        line-height: 1;
+    }
+
+    .close-docs-btn:hover {
+        color: #e74c3c;
+    }
+
+    .documents-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .document-card {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 2px solid #e0e0e0;
+        transition: all 0.3s;
+    }
+
+    .document-card:hover {
+        border-color: #9b59b6;
+        box-shadow: 0 2px 8px rgba(155, 89, 182, 0.2);
+    }
+
+    .doc-icon {
+        font-size: 2rem;
+        flex-shrink: 0;
+    }
+
+    .doc-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .doc-name {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .doc-description {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+    }
+
+    .doc-size {
+        font-size: 0.75rem;
+        color: #999;
+    }
+
+    .doc-download-btn {
+        padding: 0.6rem 1.2rem;
+        background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+        color: white;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s;
+        white-space: nowrap;
+        box-shadow: 0 2px 8px rgba(155, 89, 182, 0.3);
+    }
+
+    .doc-download-btn:hover {
+        background: linear-gradient(135deg, #8e44ad 0%, #732d91 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(155, 89, 182, 0.4);
+    }
+
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+        background: #f8f9fa;
+    }
+
+    .message {
+        margin-bottom: 1.25rem;
+        padding: 1rem 1.25rem;
+        border-radius: 12px;
+        max-width: 75%;
+        line-height: 1.6;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .message-user {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        margin-left: auto;
+        border-bottom-right-radius: 4px;
+    }
+
+    .message-bot {
+        background: white;
+        border: 1px solid #e0e0e0;
+        margin-right: auto;
+        border-bottom-left-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .message-error {
+        background: #fee;
+        color: #c00;
+        border: 1px solid #fcc;
+        margin-right: auto;
+    }
+
+    .typing-indicator {
+        padding: 1rem;
+    }
+
+    .typing-dots {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .typing-dots span {
+        width: 8px;
+        height: 8px;
+        background: #95a5a6;
+        border-radius: 50%;
+        animation: typing 1.4s infinite;
+    }
+
+    .typing-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .typing-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+
+        0%,
+        60%,
+        100% {
+            transform: translateY(0);
+            opacity: 0.4;
+        }
+
+        30% {
+            transform: translateY(-10px);
+            opacity: 1;
+        }
+    }
+
+    .chat-input {
+        display: flex;
+        gap: 10px;
+        padding: 1.25rem;
+        border-top: 1px solid #ecf0f1;
+        background: white;
+        border-radius: 0 0 12px 12px;
+    }
+
+    .chat-input input {
+        flex: 1;
+        padding: 0.875rem 1.25rem;
+        border: 2px solid #e0e0e0;
+        border-radius: 25px;
+        font-size: 1rem;
+        transition: all 0.3s;
+    }
+
+    .chat-input input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .chat-input button {
+        padding: 0.875rem 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 25px;
+        font-weight: 600;
+        transition: all 0.3s;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .chat-input button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .chat-messages::-webkit-scrollbar,
+    .documents-panel::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .chat-messages::-webkit-scrollbar-track,
+    .documents-panel::-webkit-scrollbar-track {
+        background: #f1f1f1;
+    }
+
+    .chat-messages::-webkit-scrollbar-thumb,
+    .documents-panel::-webkit-scrollbar-thumb {
+        background: #c0c0c0;
+        border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+        .chat-container {
+            border-radius: 0;
+            height: 100vh;
+        }
+
+        .message {
+            max-width: 85%;
+        }
+
+        .document-card {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .doc-download-btn {
+            width: 100%;
+            text-align: center;
+        }
+    }
+</style>
+{% endblock %}

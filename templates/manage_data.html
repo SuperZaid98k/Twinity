@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>📊 Manage Data: {{ clone.name }}</h1>
+<p>{{ clone.description }}</p>
+<p class="meta">Total chunks: {{ clone.chunk_count }}</p>
+
+<div class="action-buttons">
+    <a href="{{ url_for('edit_clone', clone_id=clone_id) }}" class="btn">← Back to Edit</a>
+    <button onclick="deleteSelected()" class="btn btn-delete" style="background: #e74c3c;">
+        🗑️ Delete Selected
+    </button>
+</div>
+
+<div class="selection-controls">
+    <button onclick="selectAll()" class="btn btn-small">Select All</button>
+    <button onclick="deselectAll()" class="btn btn-small">Deselect All</button>
+    <span id="selectionCount" style="margin-left: 1rem; font-weight: 500;"></span>
+</div>
+
+<div id="statusMessage"></div>
+
+<div class="chunks-grid">
+    {% if chunks %}
+    {% for chunk in chunks %}
+    <div class="data-chunk-card">
+        <div class="chunk-select">
+            <input type="checkbox" class="chunk-checkbox" data-id="{{ chunk.id }}" id="chunk-{{ loop.index }}">
+            <label for="chunk-{{ loop.index }}">
+                <strong>Chunk {{ loop.index }}</strong>
+                {% if chunk.section != 'N/A' %}
+                <span class="chunk-badge">{{ chunk.section }}</span>
+                {% endif %}
+                <span class="chunk-type-badge">{{ chunk.type }}</span>
+            </label>
+        </div>
+        <div class="chunk-text-preview">{{ chunk.text }}</div>
+        <button class="view-full-btn" data-chunk-id="{{ chunk.id }}" data-chunk-index="{{ loop.index }}">
+            View Full Text
+        </button>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p>No data chunks found. <a href="{{ url_for('edit_clone', clone_id=clone_id) }}">Add some data</a></p>
+    {% endif %}
+</div>
+
+<!-- Full Text Modal -->
+<div id="fullTextModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modalTitle">Chunk Details</h2>
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <pre id="fullTextContent" style="white-space: pre-wrap; line-height: 1.6;"></pre>
+        </div>
+        <div class="modal-footer">
+            <button onclick="closeModal()" class="btn">Close</button>
+        </div>
+    </div>
+</div>
+
+<script id="fullTextData" type="application/json">
+{
+{% for chunk in chunks %}
+"{{ chunk.id }}": {{ chunk.full_text | tojson }}{% if not loop.last %},{% endif %}
+{% endfor %}
+}
+</script>
+
+<script>
+    // Parse the full text data from the JSON script
+    const fullTextData = JSON.parse(document.getElementById('fullTextData').textContent);
+
+    console.log('Loaded chunks:', Object.keys(fullTextData).length);
+
+    function updateSelectionCount() {
+        const total = document.querySelectorAll('.chunk-checkbox').length;
+        const selected = document.querySelectorAll('.chunk-checkbox:checked').length;
+        const countElement = document.getElementById('selectionCount');
+        if (countElement) {
+            countElement.textContent = `${selected} of ${total} chunks selected`;
+        }
+    }
+
+    function selectAll() {
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.checked = true;
+        });
+        updateSelectionCount();
+    }
+
+    function deselectAll() {
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.checked = false;
+        });
+        updateSelectionCount();
+    }
+
+    function showFullText(chunkId, index) {
+        const modalTitle = document.getElementById('modalTitle');
+        const fullTextContent = document.getElementById('fullTextContent');
+        const modal = document.getElementById('fullTextModal');
+
+        if (modalTitle && fullTextContent && modal) {
+            modalTitle.textContent = `Chunk ${index} - Full Text`;
+            fullTextContent.textContent = fullTextData[chunkId] || 'No content available';
+            modal.style.display = 'flex';
+        }
+    }
+
+    function closeModal() {
+        const modal = document.getElementById('fullTextModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    async function deleteSelected() {
+        const selectedIds = [];
+        document.querySelectorAll('.chunk-checkbox:checked').forEach(cb => {
+            selectedIds.push(cb.dataset.id);
+        });
+
+        if (selectedIds.length === 0) {
+            alert('Please select at least one chunk to delete');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to delete ${selectedIds.length} chunk(s)? This action cannot be undone.`)) {
+            return;
+        }
+
+        const statusDiv = document.getElementById('statusMessage');
+        statusDiv.innerHTML = '<p class="processing">🗑️ Deleting chunks...</p>';
+
+        try {
+            const response = await fetch('{{ url_for("delete_chunks", clone_id=clone_id) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ chunk_ids: selectedIds })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                statusDiv.innerHTML = `
+                <p class="success">
+                    ✓ Successfully deleted ${data.deleted_count} chunk(s)<br>
+                    Remaining chunks: ${data.remaining_chunks}
+                </p>
+            `;
+
+                // Remove deleted chunks from DOM
+                selectedIds.forEach(id => {
+                    const checkbox = document.querySelector(`.chunk-checkbox[data-id="${id}"]`);
+                    if (checkbox) {
+                        checkbox.closest('.data-chunk-card').remove();
+                    }
+                });
+
+                // Update meta count
+                const metaElement = document.querySelector('.meta');
+                if (metaElement) {
+                    metaElement.textContent = `Total chunks: ${data.remaining_chunks}`;
+                }
+                updateSelectionCount();
+
+                // Reload page after 2 seconds
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                statusDiv.innerHTML = `<p class="error">✗ Error: ${data.error}</p>`;
+            }
+        } catch (error) {
+            statusDiv.innerHTML = `<p class="error">✗ Delete failed: ${error.message}</p>`;
+        }
+    }
+
+    // Initialize event listeners when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function () {
+        // Add event listeners to checkboxes
+        document.querySelectorAll('.chunk-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelectionCount);
+        });
+
+        // Add event listeners to "View Full Text" buttons
+        document.querySelectorAll('.view-full-btn').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const chunkId = this.getAttribute('data-chunk-id');
+                const chunkIndex = this.getAttribute('data-chunk-index');
+                showFullText(chunkId, chunkIndex);
+            });
+        });
+
+        // Initial count update
+        updateSelectionCount();
+
+        console.log('Event listeners initialized');
+    });
+
+    // Close modal when clicking outside
+    window.onclick = function (event) {
+        const modal = document.getElementById('fullTextModal');
+        if (event.target === modal) {
+            closeModal();
+        }
+    }
+</script>
+
+
+<style>
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .btn-delete:hover {
+        background: #c0392b !important;
+    }
+
+    .selection-controls {
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 8px;
+        flex-wrap: wrap;
+    }
+
+    .chunks-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 20px;
+        margin-top: 1rem;
+    }
+
+    .data-chunk-card {
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        padding: 1rem;
+        background: white;
+        transition: all 0.3s;
+    }
+
+    .data-chunk-card:has(.chunk-checkbox:checked) {
+        border-color: #e74c3c;
+        background: #fdedec;
+    }
+
+    .chunk-select {
+        margin-bottom: 0.75rem;
+    }
+
+    .chunk-select input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+        cursor: pointer;
+    }
+
+    .chunk-select label {
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .chunk-badge {
+        background: #3498db;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .chunk-type-badge {
+        background: #95a5a6;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+    }
+
+    .chunk-text-preview {
+        background: #f8f9fa;
+        padding: 0.75rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        line-height: 1.6;
+        color: #555;
+        margin-bottom: 0.5rem;
+        max-height: 100px;
+        overflow: hidden;
+    }
+
+    .view-full-btn {
+        background: none;
+        border: 1px solid #3498db;
+        color: #3498db;
+        cursor: pointer;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        transition: all 0.3s;
+    }
+
+    .view-full-btn:hover {
+        background: #3498db;
+        color: white;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+    }
+
+    .modal-content {
+        background-color: white;
+        width: 90%;
+        max-width: 800px;
+        max-height: 90vh;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .modal-header h2 {
+        margin: 0;
+    }
+
+    .close-btn {
+        background: none;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        color: #666;
+        line-height: 1;
+        padding: 0;
+    }
+
+    .close-btn:hover {
+        color: #e74c3c;
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid #ddd;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    #fullTextContent {
+        margin: 0;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+
+    .processing {
+        color: #f39c12;
+        font-weight: 500;
+        padding: 1rem;
+        background: #fff9e6;
+        border-left: 4px solid #f39c12;
+        border-radius: 4px;
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+        0%,
+        100% {
+            opacity: 1;
+        }
+
+        50% {
+            opacity: 0.7;
+        }
+    }
+
+    .success {
+        color: #27ae60;
+        font-weight: 500;
+        padding: 1rem;
+        background: #e8f8f5;
+        border-left: 4px solid #27ae60;
+        border-radius: 4px;
+        line-height: 1.8;
+    }
+
+    .error {
+        color: #e74c3c;
+        font-weight: 500;
+        padding: 1rem;
+        background: #fdedec;
+        border-left: 4px solid #e74c3c;
+        border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+        .chunks-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .selection-controls {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .selection-controls button {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}

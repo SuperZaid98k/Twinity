@@ -1,0 +1,18 @@
+{
+  "Zaid": {
+    "password": "pbkdf2:sha256:260000$yAurBR3n9XdtobNw$d2794280713a8c955a63a335e885c8aec361b8fe0f92c66f6d36e868174c272c",
+    "full_name": "Mohammad Zaid",
+    "created_at": "2025-10-17T23:21:36.111400",
+    "clones": [
+      "177d382c-21b2-4253-a12f-b9183630a72e"
+    ]
+  },
+  "Amaan": {
+    "password": "pbkdf2:sha256:260000$DO6BHKQgBKXy5j9J$aa3082a5741f4d2107104009be8e6f2b95cee6ea819c067da45b76b1b221cb99",
+    "full_name": "Amaan Ansari",
+    "created_at": "2025-10-19T00:16:03.996392",
+    "clones": [
+      "544d479f-aaba-42ce-945c-cbc3a355f22a"
+    ]
+  }
+}

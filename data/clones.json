@@ -1,0 +1,24 @@
+{
+  "177d382c-21b2-4253-a12f-b9183630a72e": {
+    "name": "zaidclone",
+    "description": "A student",
+    "phone_number": "+91 7218790990",
+    "is_public": true,
+    "owner": "Zaid",
+    "owner_full_name": "Mohammad Zaid",
+    "created_at": "2025-10-17T23:22:32.440209",
+    "chunk_count": 19,
+    "last_updated": "2025-10-29T22:35:28.754153"
+  },
+  "544d479f-aaba-42ce-945c-cbc3a355f22a": {
+    "name": "amaan clone",
+    "description": "A student",
+    "phone_number": "+91 9359662811",
+    "is_public": true,
+    "owner": "Amaan",
+    "owner_full_name": "Amaan Ansari",
+    "created_at": "2025-10-19T00:17:34.569817",
+    "chunk_count": 4,
+    "last_updated": "2025-10-28T21:28:56.362277"
+  }
+}

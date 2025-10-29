@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="form-container">
+    <h2>Create New Chatbot Clone</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label>Clone Name *</label>
+            <input type="text" name="clone_name" required placeholder="e.g., Tech Support Bot">
+        </div>
+        <div class="form-group">
+            <label>Description *</label>
+            <textarea name="description" required placeholder="Describe what your chatbot knows about..."></textarea>
+        </div>
+
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="is_public">
+                Make this clone public
+            </label>
+        </div>
+        <button type="submit" class="btn">Create Clone</button>
+    </form>
+</div>
+{% endblock %}
