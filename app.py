@@ -19,7 +19,8 @@ from collections import deque
 import threading
 import time
 from datetime import datetime
-
+import socket
+import re
 
 
 
@@ -235,7 +236,7 @@ def store_document_reference(clone_id, description, file_info):
 
 
 def search_relevant_chunks(clone_id, query, limit=8):
-    """Search for relevant chunks with metadata (including documents)"""
+    """Search for relevant chunks with metadata and relevance scores"""
     query_embedding = get_embedding(query)
     
     if query_embedding is None:
@@ -256,11 +257,11 @@ def search_relevant_chunks(clone_id, query, limit=8):
             limit=limit
         )
         
-        # Return chunks with metadata including document info
+        # Return chunks with metadata including relevance score
         return [
             {
                 'text': hit.payload['text'],
-                'score': hit.score,
+                'score': hit.score,  # Relevance score (0-1, higher is better)
                 'is_downloadable': hit.payload.get('is_downloadable', False),
                 'document_filename': hit.payload.get('document_filename'),
                 'document_unique_filename': hit.payload.get('document_unique_filename'),
@@ -279,36 +280,58 @@ def search_relevant_chunks(clone_id, query, limit=8):
 
 
 
+
 def generate_response(query, context_data, clone_name, clone_id, chat_history=None):
-    """Generate response with document download links and chat history"""
+    """Generate response with intelligent document filtering"""
+    
+    # Define minimum relevance score for documents (0.6 = 60% similarity)
+    MIN_DOCUMENT_RELEVANCE = 0.6
+    
+    # Check if query is asking for documents/files
+    document_keywords = [
+        'document', 'file', 'download', 'form', 'pdf', 'attachment',
+        'send', 'share', 'give me', 'show me', 'need', 'want',
+        'where is', 'can i get', 'do you have'
+    ]
+    query_lower = query.lower()
+    is_asking_for_document = any(keyword in query_lower for keyword in document_keywords)
+    
+    # Greeting/casual query detection
+    greeting_patterns = [
+        'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+        'how are you', 'what\'s up', 'whats up', 'sup', 'greetings',
+        'nice to meet', 'thanks', 'thank you', 'bye', 'goodbye'
+    ]
+    is_greeting = any(pattern in query_lower for pattern in greeting_patterns)
     
     # Build context with section information
     context_parts = []
     downloadable_docs = []
     
     # Only check top 3 chunks for documents
-    top_chunks = context_data[:3]
-    
-    for idx, item in enumerate(context_data):
+    for idx, item in enumerate(context_data[:3]):
         text = item['text']
         metadata = item.get('metadata', {})
+        score = item.get('score', 0)
         
-        # Check if this is a document reference AND in top 3
-        if idx < 3 and item.get('is_downloadable'):
+        # Only include document if:
+        # 1. User is asking for documents OR
+        # 2. Document is highly relevant (score > threshold) AND not a greeting
+        if (item.get('is_downloadable') and 
+            (is_asking_for_document or (score > MIN_DOCUMENT_RELEVANCE and not is_greeting))):
             downloadable_docs.append({
                 'filename': item.get('document_filename'),
                 'unique_filename': item.get('document_unique_filename'),
                 'size': item.get('file_size'),
-                'description': text  # The description text
+                'description': text,
+                'relevance_score': score
             })
         
         # Add section context if available
-        if 'section' in metadata:
-            context_parts.append(f"[{metadata['section'].upper()}]\n{text}")
-        elif 'type' in metadata:
-            context_parts.append(f"[{metadata['type']}]\n{text}")
-        else:
-            context_parts.append(text)
+    for item in context_data:
+        text = item['text']
+        context_parts.append(text)
+
     
     context = "\n\n---\n\n".join(context_parts)
     
@@ -319,10 +342,10 @@ def generate_response(query, context_data, clone_name, clone_id, chat_history=No
         for msg in list(chat_history)[-4:]:
             role = "User" if msg['role'] == 'user' else clone_name
             history_text += f"{role}: {msg['content']}\n"
-    print(f"{context}\n\n{history_text}")
+    print(f'{context}\n\n{history_text}')
     prompt = f"""You are {clone_name}, having a conversation with a person. Use the context information and previous conversation to provide relevant, consistent answers.
 
-Context information (organized by sections):
+These are the information about yourself:
 {context}
 {history_text}
 
@@ -330,11 +353,14 @@ Current question: {query}
 
 Instructions:
 - Answer based on the context provided and consider the conversation history only if required
-- Just Answer the question Dont explain too much.
 - Be conversational and reference previous exchanges when relevant
-- Answer like you are talking in reality with the user and keep it precise
 - If the answer isn't in the context, say so politely
-- Keep your tone consistent with previous responses"""
+- DO NOT mention document availability - documents will be shown separately if relevant
+- For greetings, respond naturally and warmly without referencing documents
+- Keep your tone consistent with previous responses
+- Just Answer the question Dont explain too much.
+- Answer like you are talking in reality with the user and keep it precise
+"""
 
     try:
         messages = [
@@ -357,11 +383,15 @@ Instructions:
         
         ai_response = response.choices[0].message.content
         
-        # Return response text and documents separately
+        # Return response text and filtered documents
         return ai_response, downloadable_docs
         
     except Exception as e:
         return f"Error generating response: {str(e)}", []
+
+
+
+
 
 
 def download_media_file(media_url, content_type):
@@ -388,15 +418,18 @@ def detect_expiry_info_with_llm(text):
     or return None for permanent info.
     Output format must be YYYY-MM-DD (or None)
     """
+    from datetime import datetime
+    now = datetime.now().date()
+    print(now)
     instruction = """
     The following message/notice has been received:
 
     "{0}"
-
-    If it is about an event or info that expires on a particular date, extract that expiry date in format YYYY-MM-DD.
-    If not time-bound or not expirable, just return "PERMANENT".
+    
+    If it is about an event or info that expires on a particular date,means that information will not be valuable after that time, extract that expiry date in format YYYY-MM-DD.
+    If not time-bound or not expirable, just return "PERMANENT". Todays date is {1}
     Only output a single line: either a date (YYYY-MM-DD) or "PERMANENT". Do not explain.
-    """.format(text)
+    """.format(text,now)
 
     try:
         response = openrouter_client.chat.completions.create(
@@ -423,65 +456,153 @@ def detect_expiry_info_with_llm(text):
 
 
 def send_whatsapp_message(phone_number, msg):
+    """Send WhatsApp message via Twilio with proper phone number formatting"""
     twilio_client = TwilioClient(
         os.getenv('TWILIO_ACCOUNT_SID'),
         os.getenv('TWILIO_AUTH_TOKEN')
     )
-    from_whatsapp_number = 'whatsapp:+14155238886'  # Twilio sandbox number, adjust if production
-    to_whatsapp_number = f"whatsapp:{phone_number}"
+    
+    # Twilio sandbox number
+    from_whatsapp_number = 'whatsapp:+14155238886'
+    
+    # Clean and format phone number
+    # Remove all spaces, dashes, parentheses, etc.
+    cleaned_phone = ''.join(filter(str.isdigit, phone_number))
+    
+    # Add country code if not present
+    if not phone_number.strip().startswith('+'):
+        # Assume India (+91) if no country code - adjust for your region
+        cleaned_phone = f"+91{cleaned_phone}"
+    else:
+        # Extract country code and number
+        cleaned_phone = '+' + cleaned_phone
+    
+    to_whatsapp_number = f"whatsapp:{cleaned_phone}"
+    
     try:
         twilio_client.messages.create(
             body=msg,
             from_=from_whatsapp_number,
             to=to_whatsapp_number
         )
+        print(f"✅ WhatsApp message sent to {cleaned_phone}")
     except Exception as e:
-        print(f"Error sending WhatsApp: {e}")
+        print(f"❌ Error sending WhatsApp to {to_whatsapp_number}: {e}")
+
+
 
 
 def delete_expired_chunks_job():
+    """Background job to delete expired chunks with proper error handling"""
+    retry_count = 0
+    max_retries = 3
+    
     while True:
         try:
+            # Check if we have internet connectivity
+            try:
+                socket.create_connection(("8.8.8.8", 53), timeout=5)
+            except OSError:
+                print("⚠️  No internet connection. Skipping expired chunk cleanup.")
+                time.sleep(900)  # Wait 15 min and retry
+                continue
+            
             now = datetime.now().date()
-            scroll = qdrant_client.scroll(
+            
+            # Scroll through all points
+            scroll_result = qdrant_client.scroll(
                 collection_name=app.config['COLLECTION_NAME'],
                 scroll_filter=None,
                 with_payload=True,
                 with_vectors=False,
                 limit=200
             )
-            points = scroll[0]
+            points = scroll_result[0]
+            
             expired_ids = []
             chunks_by_clone = {}
+            
             for point in points:
                 exp_date = point.payload.get('expiry_date')
                 cid = point.payload.get('clone_id')
+                
                 if exp_date and exp_date != "PERMANENT":
                     try:
-                        if datetime.strptime(exp_date, "%Y-%m-%d").date() < now:
+                        expiry_datetime = datetime.strptime(exp_date, "%Y-%m-%d").date()
+                        if expiry_datetime < now:
                             expired_ids.append(point.id)
-                            if cid not in chunks_by_clone: chunks_by_clone[cid] = []
+                            if cid not in chunks_by_clone:
+                                chunks_by_clone[cid] = []
                             chunks_by_clone[cid].append(point.payload.get('text', '')[:80])
-                    except Exception:
+                    except ValueError as e:
+                        print(f"Invalid date format in chunk: {exp_date}")
                         continue
+            
+            # Delete expired points
             if expired_ids:
                 qdrant_client.delete(
                     collection_name=app.config['COLLECTION_NAME'],
                     points_selector=expired_ids
                 )
-                print(f"Deleted {len(expired_ids)} expired chunks.")
+                print(f"✅ Deleted {len(expired_ids)} expired chunks.")
+                
                 # Notify via WhatsApp
                 clones = load_clones()
                 for clone_id, chunks in chunks_by_clone.items():
                     phone_number = clones.get(clone_id, {}).get('phone_number')
                     if phone_number:
-                        msg = f"⏳ The following expired items were removed from your chatbot:\n"
-                        for text in chunks:
-                            msg += f"- {text}…\n"
-                        send_whatsapp_message(phone_number, msg)
+                        try:
+                            msg = f"⏳ The following expired items were removed from your chatbot:\n"
+                            for text in chunks[:5]:  # Limit to 5 to avoid long messages
+                                msg += f"- {text}…\n"
+                            if len(chunks) > 5:
+                                msg += f"\n...and {len(chunks) - 5} more items."
+                            send_whatsapp_message(phone_number, msg)
+                        except Exception as e:
+                            print(f"Error sending WhatsApp notification: {e}")
+            else:
+                print("✓ No expired chunks found.")
+            
+            # Reset retry counter on success
+            retry_count = 0
+            
+        except socket.gaierror as e:
+            retry_count += 1
+            print(f"⚠️  Network error during expired chunk cleanup: {e}")
+            print(f"   Retry {retry_count}/{max_retries} in 5 minutes...")
+            if retry_count >= max_retries:
+                print(f"❌ Failed after {max_retries} retries. Will try again in 15 minutes.")
+                retry_count = 0
+                time.sleep(900)  # Wait 15 min after max retries
+            else:
+                time.sleep(300)  # Wait 5 min before retry
+            continue
+            
         except Exception as e:
-            print("Expired chunk cleanup error:", e)
+            print(f"❌ Expired chunk cleanup error: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Wait 15 minutes before next check
         time.sleep(900)
+
+
+
+def normalize_phone_number(phone):
+    """Normalize phone number to E.164 format"""
+    # Remove all non-digit characters except +
+    cleaned = re.sub(r'[^\d+]', '', phone.strip())
+    
+    # If it doesn't start with +, add country code
+    if not cleaned.startswith('+'):
+        # Add +91 for India - change this for your country
+        cleaned = f"+91{cleaned}"
+    
+    # Validate format: + followed by 10-15 digits
+    if re.match(r'^\+\d{10,15}$', cleaned):
+        return cleaned
+    else:
+        return None
 
 
 
@@ -605,20 +726,33 @@ def edit_clone(clone_id):
 def enable_whatsapp(clone_id):
     if 'username' not in session:
         return redirect(url_for('login'))
+    
     clones = load_clones()
     clone = clones.get(clone_id)
+    
     if not clone or clone['owner'] != session['username']:
         flash('Not allowed')
         return redirect(url_for('edit_clone', clone_id=clone_id))
 
     enable = bool(request.form.get('enable_whatsapp'))
     phone = request.form.get('phone_number', '').strip()
+    
     if enable and phone:
-        clone['phone_number'] = phone
+        # Normalize phone number
+        normalized_phone = normalize_phone_number(phone)
+        
+        if normalized_phone:
+            clone['phone_number'] = normalized_phone
+            save_clones(clones)
+            flash(f'✅ WhatsApp enabled! Number saved as: {normalized_phone}')
+        else:
+            flash('❌ Invalid phone number format. Use format: +919876543210 or 9876543210')
+            return redirect(url_for('edit_clone', clone_id=clone_id))
     else:
         clone.pop('phone_number', None)
-    save_clones(clones)
-    flash('WhatsApp setting updated!' if enable else 'WhatsApp integration disabled.')
+        save_clones(clones)
+        flash('WhatsApp integration disabled.')
+    
     return redirect(url_for('edit_clone', clone_id=clone_id))
 
 # Add after the edit_clone route (around line 360)
@@ -1073,8 +1207,13 @@ def chat_api(clone_id):
         response_text = f"I'm {clone['owner_full_name']}, but I don't have enough information to answer that question yet. Please add more data to my knowledge base."
         documents = []
     else:
-        # Generate response with documents from top 3 chunks only
+        # Generate response with intelligent document filtering
         response_text, documents = generate_response(query, context_data, clone['owner_full_name'], clone_id, chat_history)
+        
+        # Debug: Log relevance scores (remove in production)
+        print(f"Query: {query}")
+        print(f"Top chunk scores: {[item.get('score', 0) for item in context_data[:3]]}")
+        print(f"Documents returned: {len(documents)}")
     
     # Add to chat history
     add_to_chat_history(session_id, clone_id, 'user', query)
@@ -1082,7 +1221,7 @@ def chat_api(clone_id):
     
     return jsonify({
         'response': response_text,
-        'documents': documents,  # New: separate documents array
+        'documents': documents,
         'clone_id': clone_id
     })
 
@@ -1090,20 +1229,34 @@ def chat_api(clone_id):
 @app.route('/whatsapp_webhook', methods=['POST'])
 def whatsapp_webhook():
     incoming_number = request.values.get('From', '')
-    sender_phone = incoming_number.replace('whatsapp:', '')
+    sender_phone = incoming_number.replace('whatsapp:', '').strip()
+    
+    # Normalize the incoming phone number
+    sender_phone = normalize_phone_number(sender_phone)
+    
+    # ... rest of your webhook code ...
+    
+    # When matching, compare normalized numbers
+    clones = load_clones()
+    matched_clone = None
+    matched_id = None
+    
+    for clone_id, clone in clones.items():
+        stored_phone = clone.get('phone_number')
+        if stored_phone:
+            # Normalize stored phone too for comparison
+            normalized_stored = normalize_phone_number(stored_phone)
+            if sender_phone == normalized_stored:
+                matched_clone = clone
+                matched_id = clone_id
+                break
+    
+    # ... rest of your webhook code ...
     message_body = request.values.get('Body', '')
     num_media = int(request.values.get('NumMedia', 0))
     media_url = request.values.get('MediaUrl0', None)
     media_content_type = request.values.get('MediaContentType0', None)
 
-    clones = load_clones()
-    matched_clone = None
-    matched_id = None
-    for clone_id, clone in clones.items():
-        if clone.get('phone_number') and sender_phone.endswith(clone['phone_number'][-10:]):
-            matched_clone = clone
-            matched_id = clone_id
-            break
 
     from twilio.twiml.messaging_response import MessagingResponse
     resp = MessagingResponse()
@@ -1191,8 +1344,10 @@ def clear_chat_history(clone_id):
     return jsonify({'success': True, 'message': 'Chat history cleared'})
 
 
+
 if __name__ == '__main__':
     # Start the expired chunk cleaner thread on app launch
     threading.Thread(target=delete_expired_chunks_job, daemon=True).start()
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
+
 
