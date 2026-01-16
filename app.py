@@ -235,6 +235,8 @@ def store_document_reference(clone_id, description, file_info):
         return False
 
 
+from qdrant_client.models import Filter, FieldCondition, MatchValue
+
 def search_relevant_chunks(clone_id, query, limit=8):
     """Search for relevant chunks with metadata and relevance scores"""
     query_embedding = get_embedding(query)
@@ -243,9 +245,10 @@ def search_relevant_chunks(clone_id, query, limit=8):
         return []
     
     try:
-        search_result = qdrant_client.search(
+        # UPDATED: Use query_points instead of search
+        search_result = qdrant_client.query_points(
             collection_name=app.config['COLLECTION_NAME'],
-            query_vector=query_embedding,
+            query=query_embedding,  # UPDATED: 'query_vector' is now 'query'
             query_filter=Filter(
                 must=[
                     FieldCondition(
@@ -257,11 +260,11 @@ def search_relevant_chunks(clone_id, query, limit=8):
             limit=limit
         )
         
-        # Return chunks with metadata including relevance score
+        # UPDATED: Iterate over search_result.points
         return [
             {
                 'text': hit.payload['text'],
-                'score': hit.score,  # Relevance score (0-1, higher is better)
+                'score': hit.score,
                 'is_downloadable': hit.payload.get('is_downloadable', False),
                 'document_filename': hit.payload.get('document_filename'),
                 'document_unique_filename': hit.payload.get('document_unique_filename'),
@@ -272,7 +275,7 @@ def search_relevant_chunks(clone_id, query, limit=8):
                                 'document_filename', 'document_unique_filename', 'file_size']
                 }
             }
-            for hit in search_result
+            for hit in search_result.points  # UPDATED: Access the list via .points
         ]
     except Exception as e:
         print(f"Search error: {e}")
