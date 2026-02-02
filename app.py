@@ -21,6 +21,7 @@ import time
 from datetime import datetime
 import socket
 import re
+import shutil
 
 
 
@@ -1346,7 +1347,56 @@ def clear_chat_history(clone_id):
         chat_histories[key].clear()
     return jsonify({'success': True, 'message': 'Chat history cleared'})
 
-
+@app.route('/delete_clone/<clone_id>', methods=['POST'])
+def delete_clone(clone_id):
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    
+    clones = load_clones()
+    clone = clones.get(clone_id)
+    
+    # Security: Ensure clone exists and current user owns it
+    if not clone or clone['owner'] != session['username']:
+        flash('Access denied or clone not found.')
+        return redirect(url_for('dashboard'))
+    
+    try:
+        # 1. Delete vectors from Qdrant
+        qdrant_client.delete(
+            collection_name=app.config['COLLECTION_NAME'],
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="clone_id",
+                        match=MatchValue(value=clone_id)
+                    )
+                ]
+            )
+        )
+        
+        # 2. Delete local physical files for this clone
+        clone_folder = os.path.join(app.config['DOCUMENTS_FOLDER'], clone_id)
+        if os.path.exists(clone_folder):
+            shutil.rmtree(clone_folder)
+        
+        # 3. Remove from clones.json
+        del clones[clone_id]
+        save_clones(clones)
+        
+        # 4. Update the user's clone list in users.json
+        users = load_users()
+        if session['username'] in users:
+            if clone_id in users[session['username']].get('clones', []):
+                users[session['username']]['clones'].remove(clone_id)
+                save_users(users)
+                
+        flash(f'Chatbot and its data have been successfully deleted.')
+        
+    except Exception as e:
+        print(f"Deletion error: {e}")
+        flash('An error occurred while deleting the data.')
+        
+    return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     # Start the expired chunk cleaner thread on app launch
