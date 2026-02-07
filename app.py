@@ -591,21 +591,26 @@ def delete_expired_chunks_job():
 
 
 
+# ... (keep all imports and previous code)
+
+# Ensure this helper function exists
 def normalize_phone_number(phone):
     """Normalize phone number to E.164 format"""
+    if not phone:
+        return None
     # Remove all non-digit characters except +
     cleaned = re.sub(r'[^\d+]', '', phone.strip())
     
-    # If it doesn't start with +, add country code
+    # Handle 'lid' or '@s.whatsapp.net' if passed by accident
+    cleaned = cleaned.split('@')[0]
+    
+    # If it doesn't start with +, add country code (assuming India +91 if missing)
     if not cleaned.startswith('+'):
-        # Add +91 for India - change this for your country
         cleaned = f"+91{cleaned}"
     
-    # Validate format: + followed by 10-15 digits
     if re.match(r'^\+\d{10,15}$', cleaned):
         return cleaned
-    else:
-        return None
+    return None
 
 
 
@@ -1229,6 +1234,155 @@ def chat_api(clone_id):
     })
 
 
+@app.route('/api/n8n/ingest', methods=['POST'])
+def ingest_whatsapp_message():
+    """
+    Endpoint for n8n to POST WhatsApp messages to.
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        # 1. Extract Data mapped from n8n
+        raw_sender = data.get('sender', '')
+        text_body = data.get('message', '')  # Text content or Caption
+        media_url = data.get('media_url')    # URL if image exists
+        media_type = data.get('media_type', '') # Mimetype
+
+        # 2. Normalize Sender
+        sender_phone = normalize_phone_number(raw_sender)
+        if not sender_phone:
+             return jsonify({'status': 'error', 'message': 'Invalid phone number format'}), 400
+
+        # 3. Find matching clone
+        clones = load_clones()
+        matched_clone = None
+        matched_id = None
+        
+        for clone_id, clone in clones.items():
+            stored_phone = clone.get('phone_number')
+            if stored_phone:
+                normalized_stored = normalize_phone_number(stored_phone)
+                print(sender_phone[-10:][::-1]," ",normalized_stored[-10:][::-1])
+                if sender_phone[-10:][::-1] == normalized_stored[-10:][::-1]:
+                    matched_clone = clone
+                    matched_id = clone_id
+                    break
+        
+        if not matched_clone:
+            # Return 200 with ignored status so n8n doesn't retry
+            return jsonify({
+                'status': 'ignored', 
+                'message': 'Phone number not registered to any chatbot.'
+            }), 200
+
+        text_chunks = []
+        extracted_expiry_date = None
+        
+        # 4. Process Content
+        
+        # Case A: Media Message
+        if media_url:
+            try:
+                # Download the file
+                # Note: If the URL is 'mmg.whatsapp.net', ensure n8n/Evolution is configured 
+                # to provide a publicly downloadable URL or a base64 string.
+                media_file = download_media_file(media_url, media_type)
+                
+                # Process file using your existing processor
+                all_chunks = document_processor.process_file(media_file)
+                texts = [chunk['text'] for chunk in all_chunks if chunk.get('text')]
+                text_chunks.extend(texts)
+                
+                # If there is a caption (text_body) along with the image, add it too
+                if text_body:
+                    text_chunks.append(text_body)
+
+                # Clean up downloaded file
+                if os.path.exists(media_file):
+                    os.remove(media_file)
+                    
+            except Exception as e:
+                print(f"Media processing error: {e}")
+                return jsonify({'status': 'error', 'message': 'Failed to process media file'}), 500
+
+        # Case B: Text Only Message
+        elif text_body:
+            text = text_body.strip()
+            # Detect expiry using your existing LLM logic
+            extracted_expiry_date = detect_expiry_info_with_llm(text)
+            text_chunks = [text]
+            
+        else:
+            return jsonify({'status': 'error', 'message': 'Empty message received'}), 400
+
+        # 5. Store Data in Qdrant
+        expired_dates = []
+        chunks_added = 0
+        
+        for chunk_text in text_chunks:
+            if not chunk_text.strip(): continue
+            
+            # Determine expiry (Per chunk for media, or global for text)
+            if media_url:
+                expiry_date = detect_expiry_info_with_llm(chunk_text)
+            else:
+                expiry_date = extracted_expiry_date
+
+            payload = {
+                "clone_id": matched_id,
+                "text": chunk_text,
+                "source": "whatsapp",
+                "phone_sender": sender_phone,
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            if expiry_date:
+                payload['expiry_date'] = expiry_date
+                expired_dates.append(expiry_date)
+
+            embedding = get_embedding(chunk_text)
+            point = PointStruct(
+                id=str(uuid.uuid4()),
+                vector=embedding,
+                payload=payload
+            )
+            qdrant_client.upsert(
+                collection_name=app.config['COLLECTION_NAME'],
+                points=[point]
+            )
+            chunks_added += 1
+
+        # 6. Update Clone Meta & Respond to n8n
+        if chunks_added > 0:
+            matched_clone['chunk_count'] = matched_clone.get('chunk_count', 0) + chunks_added
+            matched_clone['last_updated'] = datetime.now().isoformat()
+            clones[matched_id] = matched_clone
+            save_clones(clones)
+
+            # Create a success message that n8n can map to the output node
+            confirm_msg = "✅ Data saved."
+            if expired_dates:
+                confirm_msg += f" (Expires: {', '.join(set(expired_dates))})"
+            
+            return jsonify({
+                'status': 'success',
+                'reply_message': confirm_msg,
+                'chunks_added': chunks_added
+            }), 200
+        else:
+            return jsonify({
+                'status': 'ignored',
+                'message': 'No processable text found in message.'
+            }), 200
+
+    except Exception as e:
+        print(f"Error in ingest endpoint: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ... (rest of the file)
+
 @app.route('/whatsapp_webhook', methods=['POST'])
 def whatsapp_webhook():
     incoming_number = request.values.get('From', '')
@@ -1333,10 +1487,6 @@ def whatsapp_webhook():
     resp.message(confirm_msg)
     return str(resp)
 
-
-
-
-
 @app.route('/api/clear_chat/<clone_id>', methods=['POST'])
 def clear_chat_history(clone_id):
     """Clear chat history for current session"""
@@ -1346,11 +1496,7 @@ def clear_chat_history(clone_id):
         chat_histories[key].clear()
     return jsonify({'success': True, 'message': 'Chat history cleared'})
 
-
-
 if __name__ == '__main__':
     # Start the expired chunk cleaner thread on app launch
     threading.Thread(target=delete_expired_chunks_job, daemon=True).start()
     app.run(debug=True, use_reloader=False)
-
-
