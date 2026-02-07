@@ -14,5 +14,13 @@
     "clones": [
       "544d479f-aaba-42ce-945c-cbc3a355f22a"
     ]
+  },
+  "amaanansari__7": {
+    "password": "scrypt:32768:8:1$VCR7NpexwpJ9QmpN$e3c90ffc391273b58a92235b6c1e250c5a3eb3bad575d43b8b86ea52f2d36d4c90486eb72f8de9dc769134d66fff169dbe95cbf42c9d4c6ba0aefb428d7a3a5b",
+    "full_name": "Mudassir Amaan",
+    "created_at": "2026-01-31T01:28:36.499089",
+    "clones": [
+      "d50f9d74-8ef3-442c-a2c2-ff406e57f339"
+    ]
   }
 }

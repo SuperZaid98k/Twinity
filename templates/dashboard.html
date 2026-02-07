@@ -18,9 +18,12 @@
         <p class="contact-info">📞 {{ clone.phone_number }}</p>
         {% endif %}
         <div class="button-group">
-            <a href="{{ url_for('edit_clone', clone_id=clone_id) }}" class="btn btn-small">Edit</a>
-            <a href="{{ url_for('chat_page', clone_id=clone_id) }}" class="btn btn-small">Chat</a>
-        </div>
+        <a href="{{ url_for('edit_clone', clone_id=clone_id) }}" class="btn btn-small">Edit</a>
+        <a href="{{ url_for('chat_page', clone_id=clone_id) }}" class="btn btn-small">Chat</a>
+        <form action="{{ url_for('delete_clone', clone_id=clone_id) }}" method="POST" style="display:inline;" onsubmit="return confirm('Permanently delete this chatbot?');">
+        <button type="submit" class="btn btn-small" style="background-color: #dc3545; color: white; border: none;">Delete</button>
+    </form>
+</div>
     </div>
     {% endfor %}
     {% else %}
