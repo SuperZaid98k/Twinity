@@ -1,90 +1,85 @@
 import os
-import uuid
-import requests
-import socket
-import time
+import re
 from datetime import datetime
-from twilio.rest import Client as TwilioClient
-from twilio.twiml.messaging_response import MessagingResponse
-from qdrant_client.models import PointStruct
 
-from backend.core.extensions import qdrant_client
-from backend.services.embedding_service import get_embedding
-from backend.services.document_service import download_media_file
-from backend.repositories.clone_repo import load_clones, save_clones
-from backend.utils.phone_utils import normalize_phone_number
+from twilio.rest import Client as TwilioClient
+
 from backend.core.extensions import openrouter_client
-from backend.document_processor import LLMDocumentProcessor
+from backend.utils.phone_utils import normalize_phone_number
 
 
 def detect_expiry_info_with_llm(text):
     """
-    Use LLM or OpenRouter to extract a date when this info expires,
-    or return None for permanent info.
-    Output format must be YYYY-MM-DD (or None)
+    Extract a date when info expires.
+    Returns `YYYY-MM-DD` or `None` for permanent/non-time-bound info.
     """
-    from datetime import datetime
-    now = datetime.now().date()
-    print(now)
-    instruction = """
-    The following message/notice has been received:
+    if not text or not text.strip():
+        return None
 
-    "{0}"
-    
-    If it is about an event or info that expires on a particular date,means that information will not be valuable after that time, extract that expiry date in format YYYY-MM-DD.
-    If not time-bound or not expirable, just return "PERMANENT". Todays date is {1}
-    Only output a single line: either a date (YYYY-MM-DD) or "PERMANENT". Do not explain.
-    """.format(text, now)
+    now = datetime.now().date().isoformat()
+    instruction = f"""
+The following message/notice has been received:
+"{text}"
+
+If this information becomes invalid after a specific date, return only that date in YYYY-MM-DD format.
+If it is not time-bound, return PERMANENT.
+Today's date is {now}.
+Output one line only: YYYY-MM-DD or PERMANENT.
+""".strip()
 
     try:
         response = openrouter_client.chat.completions.create(
             model="openai/gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Extract expiry dates for time-relevant messages."},
-                {"role": "user", "content": instruction}
-            ]
+                {
+                    "role": "system",
+                    "content": "Extract expiry dates for time-relevant messages.",
+                },
+                {"role": "user", "content": instruction},
+            ],
         )
-        content = response.choices[0].message.content
-        if content is None:
-            return None
+        content = response.choices[0].message.content or ""
         result = content.strip()
+
         if "PERMANENT" in result.upper():
             return None
-        try:
-            dateval = datetime.strptime(result[:10], "%Y-%m-%d").date()
-            return str(dateval)
-        except Exception:
-            pass
-        return None
-    except Exception as e:
-        print("Expiry LLM error:", e)
+
+        date_match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", result)
+        if not date_match:
+            return None
+
+        parsed = datetime.strptime(date_match.group(0), "%Y-%m-%d").date()
+        return parsed.isoformat()
+    except Exception as err:
+        print(f"Expiry LLM error: {err}")
         return None
 
 
 def send_whatsapp_message(phone_number, msg):
-    """Send WhatsApp message via Twilio with proper phone number formatting"""
-    twilio_client = TwilioClient(
-        os.getenv('TWILIO_ACCOUNT_SID'),
-        os.getenv('TWILIO_AUTH_TOKEN')
-    )
-    
-    from_whatsapp_number = 'whatsapp:+14155238886'
-    
-    cleaned_phone = ''.join(filter(str.isdigit, phone_number))
-    
-    if not phone_number.strip().startswith('+'):
-        cleaned_phone = f"+91{cleaned_phone}"
-    else:
-        cleaned_phone = '+' + cleaned_phone
-    
-    to_whatsapp_number = f"whatsapp:{cleaned_phone}"
-    
+    """Send WhatsApp message via Twilio with normalized E.164 phone number."""
+    normalized_phone = normalize_phone_number(phone_number or "")
+    if not normalized_phone:
+        print(f"Error sending WhatsApp: invalid destination number: {phone_number}")
+        return False
+
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+    if not account_sid or not auth_token:
+        print("Error sending WhatsApp: missing TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN")
+        return False
+
+    twilio_client = TwilioClient(account_sid, auth_token)
+    from_whatsapp_number = "whatsapp:+14155238886"
+    to_whatsapp_number = f"whatsapp:{normalized_phone}"
+
     try:
         twilio_client.messages.create(
             body=msg,
             from_=from_whatsapp_number,
-            to=to_whatsapp_number
+            to=to_whatsapp_number,
         )
-        print(f"✅ WhatsApp message sent to {cleaned_phone}")
-    except Exception as e:
-        print(f"❌ Error sending WhatsApp to {to_whatsapp_number}: {e}")
+        print(f"WhatsApp message sent to {normalized_phone}")
+        return True
+    except Exception as err:
+        print(f"Error sending WhatsApp to {to_whatsapp_number}: {err}")
+        return False
