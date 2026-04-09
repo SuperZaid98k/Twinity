@@ -5,21 +5,16 @@ from werkzeug.utils import secure_filename
 from qdrant_client.models import PointStruct
 from backend.core.extensions import qdrant_client
 from backend.services.embedding_service import get_embedding
-from backend.document_processor import LLMDocumentProcessor
 from backend.core.extensions import document_processor
 from flask import current_app
 
 
 def process_uploaded_file(file_path: str, filename: str) -> tuple:
     """Process uploaded file and return chunks"""
-    
-    # LlamaParse handles ALL file types automatically - no need to check extension!
+
     chunks = document_processor.process_file(file_path)
-    for i,c in enumerate(chunks):
-        print(i,' : ',c['text'])
-    # Convert to embeddings
     embedded_chunks = document_processor.chunk_to_embeddings(chunks)
-    
+
     return embedded_chunks, len(embedded_chunks)
 
 
@@ -115,9 +110,17 @@ def store_document_reference(clone_id, description, file_info):
 
 
 def download_media_file(media_url, content_type):
-    ext = content_type.split('/')[-1]
+    # Twilio can provide content types like "image/jpeg" or "image/jpeg; charset=binary"
+    base_content_type = (content_type or "").split(";", 1)[0].strip().lower()
+    ext = base_content_type.split("/")[-1] if "/" in base_content_type else "bin"
+    if not ext:
+        ext = "bin"
+
     filename = f"whatsapp_{uuid.uuid4().hex}.{ext}"
-    filepath = os.path.join('uploads', filename)
+    upload_folder = current_app.config["UPLOAD_FOLDER"]
+    os.makedirs(upload_folder, exist_ok=True)
+    filepath = os.path.join(upload_folder, filename)
+
     # Use Twilio credentials for HTTP basic auth
     TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
     TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
