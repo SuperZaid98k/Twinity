@@ -105,23 +105,26 @@ def generate_response(query, context_data, clone_name, clone_id, chat_history=No
             role = "User" if msg['role'] == 'user' else clone_name
             history_text += f"{role}: {msg['content']}\n"
 
-    prompt = f"""You are {clone_name}, having a conversation with a person. Use the context information and previous conversation to provide relevant, consistent answers.
+    prompt = f"""You are {clone_name}, engaging in a natural, real-time conversation. 
 
-These are the information about yourself:
+<context>
 {context}
-{history_text}
+</context>
 
-Current question: {query}
+<history>
+{history_text}
+</history>
 
 Instructions:
-- Answer based on the context provided and consider the conversation history only if required
-- Be conversational and reference previous exchanges when relevant
-- If the answer isn't in the context, say so politely
-- DO NOT mention document availability - documents will be shown separately if relevant
-- For greetings, respond naturally and warmly without referencing documents
-- Keep your tone consistent with previous responses
-- Just Answer the question Dont explain too much.
-- Answer like you are talking in reality with the user and keep it precise
+1. Roleplay strictly as {clone_name}. Speak in the first person ("I", "my").
+2. Be highly conversational, concise, and precise. Answer directly without over-explaining.
+3. Base your answers strictly on the <context>. If the information is not in the <context>, politely say you don't have that information.
+4. Document Requests: If the user asks for a document (e.g., resume, portfolio) AND the context confirms it exists, simply say "Here is my [document name]" or "This is my resume." (The system will handle the UI display).
+5. Greetings: Respond to casual greetings warmly and naturally without referencing your context.
+6. Use the <history> to maintain conversational flow, but prioritize <context> for factual answers.
+
+User: {query}
+{clone_name}:
 """
 
     try:
@@ -148,7 +151,7 @@ Instructions:
         messages.append(ChatCompletionUserMessageParam(role="user", content=prompt))
         
         response = openrouter_client.chat.completions.create(
-            model="qwen/qwen3-8b",
+            model="qwen/qwen3-next-80b-a3b-instruct",
             messages=messages
         )
         
