@@ -1,7 +1,14 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import Header from "@/components/Header";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -23,8 +30,14 @@ import {
   uploadSelectedChunks,
   uploadTextChunks,
 } from "@/lib/api";
-import { ArrowLeft, FileText, Link as LinkIcon, Phone, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, ExternalLink, FileText, Link as LinkIcon, MessageCircle, Phone, QrCode, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+
+const TWILIO_WHATSAPP_NUMBER = "+1 415 523 8886";
+const TWILIO_WHATSAPP_NUMBER_RAW = "14155238886";
+const TWILIO_JOIN_CODE = "join stone-roll";
+const TWILIO_WHATSAPP_LINK = `https://wa.me/${TWILIO_WHATSAPP_NUMBER_RAW}?text=${encodeURIComponent(TWILIO_JOIN_CODE)}`;
+const TWILIO_QR_IMAGE_PATH = "/WhatsAppQR.jpeg";
 
 const ManageClone = () => {
   const { cloneId } = useParams<{ cloneId: string }>();
@@ -41,6 +54,7 @@ const ManageClone = () => {
   const [selectedPreviewIds, setSelectedPreviewIds] = useState<number[]>([]);
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [isWhatsappSetupOpen, setIsWhatsappSetupOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingVisibility, setIsSavingVisibility] = useState(false);
   const [isSavingWhatsapp, setIsSavingWhatsapp] = useState(false);
@@ -104,13 +118,22 @@ const ManageClone = () => {
 
   const handleSaveWhatsapp = async () => {
     if (!cloneId) return;
+    if (whatsappEnabled && !phoneNumber.trim()) {
+      toast.error("Add a WhatsApp phone number before enabling the integration");
+      return;
+    }
     setIsSavingWhatsapp(true);
     try {
-      const response = await updateCloneWhatsapp(cloneId, whatsappEnabled, phoneNumber);
+      const response = await updateCloneWhatsapp(cloneId, whatsappEnabled, phoneNumber.trim());
       setClone(response.clone);
       setWhatsappEnabled(!!response.clone.phone_number);
       setPhoneNumber(response.clone.phone_number || "");
       toast.success("WhatsApp settings updated");
+      if (response.clone.phone_number) {
+        setIsWhatsappSetupOpen(true);
+      } else {
+        setIsWhatsappSetupOpen(false);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update WhatsApp settings";
       toast.error(message);
@@ -251,10 +274,130 @@ const ManageClone = () => {
     }
   };
 
+  const handleWhatsappToggle = (checked: boolean) => {
+    setWhatsappEnabled(checked);
+    if (checked) {
+      setIsWhatsappSetupOpen(true);
+    } else {
+      setIsWhatsappSetupOpen(false);
+    }
+  };
+
+  const copyToClipboard = async (value: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(`${label} copied`);
+    } catch {
+      toast.error(`Couldn't copy ${label.toLowerCase()}`);
+    }
+  };
+
+  const openWhatsappSandbox = () => {
+    window.open(TWILIO_WHATSAPP_LINK, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto px-4 pt-24 pb-16 max-w-6xl space-y-6">
+        <Dialog open={isWhatsappSetupOpen} onOpenChange={setIsWhatsappSetupOpen}>
+          <DialogContent className="glass glow-box max-h-[90vh] w-[calc(100vw-1.5rem)] max-w-4xl overflow-y-auto border-border/60 bg-card/95 p-0 text-foreground sm:w-[calc(100vw-3rem)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,hsl(var(--primary)/0.18),transparent_40%),radial-gradient(circle_at_bottom_right,hsl(var(--accent)/0.12),transparent_38%)]" />
+            <div className="relative p-6 sm:p-8">
+              <DialogHeader className="mb-6 space-y-2 text-left">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.2em] text-primary">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  WhatsApp Setup
+                </div>
+                <DialogTitle className="text-2xl font-display font-bold text-foreground">
+                  Join the Twilio sandbox to enable WhatsApp uploads
+                </DialogTitle>
+                <DialogDescription className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                  After saving your number, connect your device by sending the sandbox join code in WhatsApp or by scanning the QR code on your mobile.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-5 lg:grid-cols-[1.1fr_auto_0.9fr] lg:items-center">
+                <div className="rounded-2xl border border-border/60 bg-background/60 p-5 sm:p-6">
+                  <h3 className="text-2xl font-display font-semibold text-foreground">Send a WhatsApp message</h3>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    Use the WhatsApp app on your phone and send a message to the Twilio sandbox number below.
+                  </p>
+
+                  <div className="mt-6 space-y-4">
+                    <div className="rounded-xl border border-primary/15 bg-primary/5 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Sandbox Number</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <span className="text-xl font-semibold text-foreground">{TWILIO_WHATSAPP_NUMBER}</span>
+                        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void copyToClipboard(TWILIO_WHATSAPP_NUMBER, "Phone number")}>
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Join Code</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <span className="text-xl font-semibold text-foreground">{TWILIO_JOIN_CODE}</span>
+                        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => void copyToClipboard(TWILIO_JOIN_CODE, "Join code")}>
+                          <Copy className="h-4 w-4" />
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Button type="button" className="gap-2" onClick={openWhatsappSandbox}>
+                      <ExternalLink className="h-4 w-4" />
+                      Open WhatsApp
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setIsWhatsappSetupOpen(false)}>
+                      I'll do this later
+                    </Button>
+                  </div>
+
+                  <p className="mt-4 text-xs leading-5 text-muted-foreground">
+                    Once joined, you can send text, images, and files to update this clone automatically from WhatsApp.
+                  </p>
+                </div>
+
+                <div className="hidden h-full min-h-[240px] items-center justify-center lg:flex">
+                  <div className="flex h-full flex-col items-center justify-center gap-4">
+                    <div className="h-16 w-px bg-border/70" />
+                    <span className="text-sm font-semibold uppercase tracking-[0.35em] text-muted-foreground">OR</span>
+                    <div className="h-16 w-px bg-border/70" />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border/60 bg-background/60 p-5 sm:p-6">
+                  <div className="flex items-center gap-2 text-primary">
+                    <QrCode className="h-5 w-5" />
+                    <span className="text-xs font-medium uppercase tracking-[0.2em]">Quick Scan</span>
+                  </div>
+                  <h3 className="mt-3 text-2xl font-display font-semibold text-foreground">Scan the QR code on mobile</h3>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    Upload your own Twilio sandbox QR image to the public folder and this popup will show it automatically.
+                  </p>
+
+                  <div className="mt-6 flex justify-center">
+                    <div className="rounded-[28px] border border-border/70 bg-white p-4 shadow-2xl shadow-black/20">
+                      <img
+                        src={TWILIO_QR_IMAGE_PATH}
+                        alt="QR code to join the Twilio WhatsApp sandbox"
+                        className="h-48 w-48 rounded-xl object-contain sm:h-56 sm:w-56"
+                      />
+                    </div>
+                  </div>
+
+                  
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Link to="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="w-4 h-4" />
           Back to Dashboard
@@ -313,7 +456,7 @@ const ManageClone = () => {
                   <p className="text-xs text-muted-foreground">Send messages/files to auto-update clone knowledge.</p>
                 </div>
               </div>
-              <Switch checked={whatsappEnabled} onCheckedChange={setWhatsappEnabled} />
+              <Switch checked={whatsappEnabled} onCheckedChange={handleWhatsappToggle} />
             </div>
             <div className="space-y-2">
               <label className="text-xs text-muted-foreground flex items-center gap-2">
@@ -322,9 +465,22 @@ const ManageClone = () => {
               </label>
               <Input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+919876543210" />
             </div>
-            <Button onClick={() => void handleSaveWhatsapp()} disabled={isSavingWhatsapp}>
-              {isSavingWhatsapp ? "Saving..." : "Save WhatsApp Settings"}
-            </Button>
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => void handleSaveWhatsapp()} disabled={isSavingWhatsapp}>
+                {isSavingWhatsapp ? "Saving..." : "Save WhatsApp Settings"}
+              </Button>
+              {whatsappEnabled && (
+                <Button type="button" variant="outline" onClick={() => setIsWhatsappSetupOpen(true)}>
+                  View Setup Popup
+                </Button>
+              )}
+            </div>
+            {whatsappEnabled && (
+              <p className="text-xs leading-5 text-muted-foreground">
+                After saving, users must send <span className="font-semibold text-foreground">{TWILIO_JOIN_CODE}</span> to{" "}
+                <span className="font-semibold text-foreground">{TWILIO_WHATSAPP_NUMBER}</span> or scan the QR code from the setup popup.
+              </p>
+            )}
           </div>
         </section>
 
@@ -440,3 +596,4 @@ const ManageClone = () => {
 };
 
 export default ManageClone;
+
