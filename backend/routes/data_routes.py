@@ -2,7 +2,7 @@ from flask import (Blueprint,request,jsonify,session,redirect,url_for,flash,send
 import os
 from datetime import datetime
 from werkzeug.utils import secure_filename
-from qdrant_client.models import Filter, FieldCondition, MatchValue, HasIdCondition
+from qdrant_client.models import Filter, FieldCondition, MatchValue, HasIdCondition, Condition
 from backend.repositories.clone_repo import load_clones, save_clones
 from backend.services.document_service import (process_uploaded_file,store_chunks_in_qdrant,save_document,store_document_reference)
 from backend.core.extensions import qdrant_client
@@ -284,11 +284,17 @@ def delete_chunks(clone_id):
 
         delete_filter = Filter(
             must=[
-                FieldCondition(
-                    key="clone_id",
-                    match=MatchValue(value=clone_id)
+                Condition(
+                    field=FieldCondition(
+                        key="clone_id",
+                        match=MatchValue(value=clone_id)
+                    )
                 ),
-                HasIdCondition(has_id=normalized_chunk_ids)
+                Condition(
+                    has_id=HasIdCondition(
+                        has_id=normalized_chunk_ids
+                    )
+                )
             ]
         )
 
