@@ -1,0 +1,18 @@
+{
+  "trial": {
+    "password": "scrypt:32768:8:1$rlYPl2s0nf8zQxFx$53f4f5e16548646f6790798f771897735c7bc074362952e3b5c6215ce848ee7ac8d85c7f5dd1fd3080e41646cecafd6d7e86c02fedf6e494502befa777eb83d7",
+    "full_name": "Mohammad Zaid",
+    "created_at": "2026-04-09T01:28:05.689555",
+    "clones": [
+      "27fc4745-4f07-45f8-b97e-2aec4d4dd05f"
+    ]
+  },
+  "feroz": {
+    "password": "scrypt:32768:8:1$rFg0HxdOoXf8zjZx$98c0b021c17221298356a556d0994d63e5de2644bb87d2c184913af53179e5ffd6af4cec96882e801b02a6edc770b5ca1c3302fb5fcb0be3ac29894ec9e8ff3c",
+    "full_name": "Feroz Ahmad Siddiqui",
+    "created_at": "2026-04-09T02:33:53.539038",
+    "clones": [
+      "855c073c-6355-40b6-9d10-d29978cc3041"
+    ]
+  }
+}

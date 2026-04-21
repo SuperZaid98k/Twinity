@@ -1,0 +1,24 @@
+{
+  "27fc4745-4f07-45f8-b97e-2aec4d4dd05f": {
+    "name": "zaid_clone",
+    "description": "Student",
+    "is_public": true,
+    "owner": "trial",
+    "owner_full_name": "Mohammad Zaid",
+    "created_at": "2026-04-09T01:29:15.110768",
+    "chunk_count": 14,
+    "last_updated": "2026-04-14T16:31:59.403385",
+    "phone_number": "+917218790990"
+  },
+  "855c073c-6355-40b6-9d10-d29978cc3041": {
+    "name": "Feroz",
+    "description": "Teacher",
+    "is_public": true,
+    "owner": "feroz",
+    "owner_full_name": "Feroz Ahmad Siddiqui",
+    "created_at": "2026-04-09T02:35:33.974874",
+    "chunk_count": 7,
+    "last_updated": "2026-04-21T13:44:42.868465",
+    "phone_number": "+919307482792"
+  }
+}

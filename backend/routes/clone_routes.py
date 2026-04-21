@@ -16,7 +16,7 @@ from backend.repositories.user_repo import load_users, save_users
 from backend.repositories.clone_repo import load_clones, save_clones
 from backend.utils.phone_utils import normalize_phone_number
 from backend.core.extensions import qdrant_client
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
 import shutil
 import os
 from flask import current_app
@@ -158,13 +158,15 @@ def delete_clone(clone_id):
     try:
         qdrant_client.delete(
             collection_name=current_app.config['COLLECTION_NAME'],
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="clone_id",
-                        match=MatchValue(value=clone_id)
-                    )
-                ]
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="clone_id",
+                            match=MatchValue(value=clone_id)
+                        )
+                    ]
+                )
             )
         )
         
@@ -360,13 +362,15 @@ def api_delete_clone(clone_id):
     try:
         qdrant_client.delete(
             collection_name=current_app.config['COLLECTION_NAME'],
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="clone_id",
-                        match=MatchValue(value=clone_id)
-                    )
-                ]
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="clone_id",
+                            match=MatchValue(value=clone_id)
+                        )
+                    ]
+                )
             )
         )
 

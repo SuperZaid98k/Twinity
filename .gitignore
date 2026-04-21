@@ -28,8 +28,6 @@ backend/uploads/
 backend/documents/
 
 # Local JSON stores (keep placeholders via .gitkeep if needed)
-data/*.json
-backend/data/*.json
 
 # Frontend artifacts
 node_modules/
